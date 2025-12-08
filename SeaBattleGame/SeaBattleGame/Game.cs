@@ -1,9 +1,9 @@
 ﻿public class Game
 {
-    public GameBoard PlayerBoard { get; private set; }
+    public GameBoard PlayerBoard { get; set; }
     public GameBoard EnemyBoard { get; private set; }
     public GameState CurrentState { get; set; }
-    public string Winner { get; set; } 
+    public string Winner { get; set; }
 
     public Game()
     {

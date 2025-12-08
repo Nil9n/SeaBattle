@@ -35,8 +35,10 @@ public class GameBoard
         return true;
     }
 
-    private bool IsValidPlacement(Ship ship, int x, int y, bool isHorizontal)
+    public bool IsValidPlacement(Ship ship, int x, int y, bool isHorizontal)
     {
+        if (x < 0 || x >= Size || y < 0 || y >= Size) return false;
+
         if (isHorizontal)
         {
             if (x + ship.Size > Size) return false;
@@ -46,17 +48,26 @@ public class GameBoard
             if (y + ship.Size > Size) return false;
         }
 
-        for (int i = -1; i <= ship.Size; i++)
+        for (int i = 0; i < ship.Size; i++)
         {
-            for (int j = -1; j <= 1; j++)
-            {
-                int checkX = x + (isHorizontal ? i : j);
-                int checkY = y + (isHorizontal ? j : i);
+            int shipX = x + (isHorizontal ? i : 0);
+            int shipY = y + (isHorizontal ? 0 : i);
 
-                if (checkX >= 0 && checkX < Size && checkY >= 0 && checkY < Size)
+            if (Grid[shipX, shipY] != CellState.Empty)
+                return false;
+
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
                 {
-                    if (Grid[checkX, checkY] == CellState.Ship)
-                        return false;
+                    int checkX = shipX + dx;
+                    int checkY = shipY + dy;
+
+                    if (checkX >= 0 && checkX < Size && checkY >= 0 && checkY < Size)
+                    {
+                        if (Grid[checkX, checkY] == CellState.Ship)
+                            return false;
+                    }
                 }
             }
         }
@@ -105,7 +116,6 @@ public class GameBoard
 
     public bool AllShipsSunk()
     {
-
         if (Ships.Count == 0) return false;
 
         foreach (var ship in Ships)
@@ -122,7 +132,8 @@ public class GameBoard
 
         for (int i = 0; i < Size; i++)
             for (int j = 0; j < Size; j++)
-                Grid[i, j] = CellState.Empty;
+                if (Grid[i, j] == CellState.Ship)
+                    Grid[i, j] = CellState.Empty;
 
         int[] shipSizes = { 4, 3, 3, 2, 2, 2, 1, 1, 1, 1 };
         Random rand = new Random();
@@ -142,12 +153,9 @@ public class GameBoard
                 if (PlaceShip(ship, x, y, horizontal))
                 {
                     placed = true;
-                    Console.WriteLine($"Размещен корабль размером {size} в [{x},{y}] горизонтально: {horizontal}");
                 }
                 attempts++;
             }
         }
-
-        Console.WriteLine($"Всего размещено кораблей: {Ships.Count}");
     }
 }
