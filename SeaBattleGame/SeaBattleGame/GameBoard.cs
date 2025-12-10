@@ -106,11 +106,31 @@ public class GameBoard
 
     private void MarkSunkShip(Ship ship)
     {
+        // 1. Помечаем сам корабль как потопленный
         for (int i = 0; i < ship.Size; i++)
         {
             int x = ship.StartX + (ship.IsHorizontal ? i : 0);
             int y = ship.StartY + (ship.IsHorizontal ? 0 : i);
             Grid[x, y] = CellState.Sunk;
+        }
+
+        // 2. Помечаем клетки ВОКРУГ корабля как "Промах" (Miss)
+        // Проходим по прямоугольнику вокруг корабля
+        int startX = Math.Max(0, ship.StartX - 1);
+        int startY = Math.Max(0, ship.StartY - 1);
+        int endX = Math.Min(Size - 1, ship.StartX + (ship.IsHorizontal ? ship.Size : 1));
+        int endY = Math.Min(Size - 1, ship.StartY + (ship.IsHorizontal ? 1 : ship.Size));
+
+        for (int x = startX; x <= endX; x++)
+        {
+            for (int y = startY; y <= endY; y++)
+            {
+                // Если клетка не является частью корабля (то есть она Empty или Miss), ставим Miss
+                if (Grid[x, y] != CellState.Sunk && Grid[x, y] != CellState.Hit)
+                {
+                    Grid[x, y] = CellState.Miss;
+                }
+            }
         }
     }
 

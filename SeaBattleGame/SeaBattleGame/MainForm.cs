@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -7,6 +8,8 @@ namespace SeaBattleGame
 {
     public partial class MainForm : Form
     {
+        private bool isEnemyReady = false;
+        private bool isMyShipsPlaced = false;
         private Game game;
         private NetworkManager networkManager;
         private bool isHost = false;
@@ -48,6 +51,16 @@ namespace SeaBattleGame
             UpdateShipInfo();
         }
 
+        private void CheckGameStart()
+        {
+            // Игра начинается только если я расставил корабли И противник прислал READY
+            if (isMyShipsPlaced && isEnemyReady)
+            {
+                game.StartGame(isHost);
+                lblStatus.Text = isHost ? "Все готовы! Ваш ход!" : "Все готовы! Ход противника...";
+                UpdateUI();
+            }
+        }
         private void SetupUI()
         {
             lblPlayer = new Label { Text = "Ваше поле:", Location = new Point(20, 20), AutoSize = true };
@@ -132,6 +145,13 @@ namespace SeaBattleGame
         {
             DrawBoard(game.PlayerBoard, playerGrid, true);
             DrawBoard(game.EnemyBoard, enemyGrid, false);
+
+            bool isSetup = game.CurrentState == GameState.Setup;
+
+            // БЛОКИРОВКА КНОПОК ВО ВРЕМЯ ИГРЫ (Пункт 4)
+            btnAutoPlace.Enabled = isSetup;
+            btnClearShips.Enabled = isSetup;
+            btnRotate.Enabled = isSetup;
 
             switch (game.CurrentState)
             {
@@ -342,15 +362,19 @@ namespace SeaBattleGame
         {
             if (currentShipIndex < shipsToPlace.Length)
             {
-                MessageBox.Show("Расставьте все корабли прежде чем начать игру!", "Ошибка");
+                MessageBox.Show("Расставьте все корабли!", "Ошибка");
                 return;
             }
 
-            game.StartGame(isHost);
-            await networkManager.SendMessage("START_GAME");
+            // Блокируем кнопку, чтобы не нажать дважды
+            btnStartGame.Enabled = false;
+            lblStatus.Text = "Ожидание готовности противника...";
 
-            lblStatus.Text = isHost ? "Игра началась! Ваш ход!" : "Игра началась! Ожидайте хода...";
-            UpdateUI();
+            // Отправляем сигнал готовности
+            await networkManager.SendMessage("READY");
+
+            isMyShipsPlaced = true;
+            CheckGameStart(); // Проверяем, можно ли начать
         }
 
         private async void EnemyGrid_CellClick(object sender, DataGridViewCellEventArgs e)
@@ -387,37 +411,94 @@ namespace SeaBattleGame
             }));
         }
 
+        private void MarkSurroundingAsMiss(GameBoard board, Ship ship)
+        {
+            // Ручная отрисовка промахов вокруг убитого корабля на поле врага
+            int startX = Math.Max(0, ship.StartX - 1);
+            int startY = Math.Max(0, ship.StartY - 1);
+            int endX = Math.Min(9, ship.StartX + (ship.IsHorizontal ? ship.Size : 1));
+            int endY = Math.Min(9, ship.StartY + (ship.IsHorizontal ? 1 : ship.Size));
+
+            for (int x = startX; x <= endX; x++)
+            {
+                for (int y = startY; y <= endY; y++)
+                {
+                    if (board.Grid[x, y] == CellState.Empty)
+                    {
+                        board.Grid[x, y] = CellState.Miss;
+                    }
+                }
+            }
+        }
+
+        private void ResetGameVariables()
+        {
+            isEnemyReady = false;
+            isMyShipsPlaced = false;
+            currentShipIndex = 0;
+            btnStartGame.Enabled = false;
+        }
+
         private void OnNetworkMessageReceived(string message)
         {
-            this.Invoke(new Action(() =>
+            this.Invoke(new Action(async () => // Добавил async для отправки ответов
             {
                 string[] parts = message.Split(':');
                 switch (parts[0])
                 {
-                    case "START_GAME":
-                        game.StartGame(false);
-                        lblStatus.Text = "Игра началась! Ожидайте хода противника...";
-                        UpdateUI();
+                    case "READY": // ИСПРАВЛЕНИЕ 2: Противник готов
+                        isEnemyReady = true;
+                        if (!isMyShipsPlaced)
+                            lblStatus.Text = "Противник готов! Расставьте корабли и нажмите Старт.";
+                        else
+                            CheckGameStart();
                         break;
 
                     case "MOVE":
                         int x = int.Parse(parts[1]);
                         int y = int.Parse(parts[2]);
-                        var result = game.ProcessEnemyMove(x, y);
-                        _ = networkManager.SendMessage($"RESULT:{result}:{x}:{y}");
 
+                        // Обрабатываем выстрел противника по нам
+                        var result = game.ProcessEnemyMove(x, y);
+
+                        // ИСПРАВЛЕНИЕ 1: Если корабль убит, отправляем информацию о корабле, чтобы отрисовать обводку у врага
+                        string extraData = "";
+                        if (result == CellState.Sunk)
+                        {
+                            // Ищем, какой корабль был на этих координатах, чтобы передать его параметры
+                            var sunkShip = game.PlayerBoard.Ships.FirstOrDefault(s => s.IsAt(x, y));
+                            if (sunkShip != null)
+                            {
+                                extraData = $":{sunkShip.StartX}:{sunkShip.StartY}:{sunkShip.Size}:{(sunkShip.IsHorizontal ? 1 : 0)}";
+                            }
+                        }
+
+                        // Отправляем результат врагу
+                        await networkManager.SendMessage($"RESULT:{result}:{x}:{y}{extraData}");
+
+                        // ИСПРАВЛЕНИЕ 5: Проверяем проигрыш
                         if (game.PlayerBoard.AllShipsSunk())
                         {
                             game.CurrentState = GameState.GameOver;
                             game.Winner = "Enemy";
                             lblStatus.Text = "Вы проиграли! Все ваши корабли потоплены!";
                             UpdateUI();
+                            await networkManager.SendMessage("GAME_OVER_YOU_WIN"); // Явно говорим врагу, что он победил
                             ShowRestartDialog();
                         }
                         else
                         {
-                            lblStatus.Text = "Ваш ход! Стреляйте!";
-                            game.CurrentState = GameState.PlayerTurn;
+                            // ИСПРАВЛЕНИЕ 3: Если он попал (Hit или Sunk), ход остается у НЕГО
+                            if (result == CellState.Miss)
+                            {
+                                game.CurrentState = GameState.PlayerTurn;
+                                lblStatus.Text = "Противник промахнулся! Ваш ход!";
+                            }
+                            else
+                            {
+                                game.CurrentState = GameState.EnemyTurn;
+                                lblStatus.Text = "Противник попал! Он ходит снова...";
+                            }
                             UpdateUI();
                         }
                         break;
@@ -427,18 +508,26 @@ namespace SeaBattleGame
                         int targetX = int.Parse(parts[2]);
                         int targetY = int.Parse(parts[3]);
 
+                        // Обновляем свое представление о поле врага
                         game.EnemyBoard.Grid[targetX, targetY] = resultType;
 
-                        if (game.EnemyBoard.AllShipsSunk())
+                        // ИСПРАВЛЕНИЕ 1 (Визуал): Если мы потопили корабль, нужно закрасить обводку на НАШЕМ экране
+                        if (resultType == CellState.Sunk && parts.Length > 4)
                         {
-                            game.CurrentState = GameState.GameOver;
-                            game.Winner = "Player";
-                            lblStatus.Text = "Вы победили! Все корабли противника потоплены!";
-                            UpdateUI();
-                            ShowRestartDialog();
-                            break;
+                            int sX = int.Parse(parts[4]);
+                            int sY = int.Parse(parts[5]);
+                            int sSize = int.Parse(parts[6]);
+                            bool sHor = int.Parse(parts[7]) == 1;
+
+                            // Создаем временный корабль, чтобы использовать логику обводки
+                            Ship tempShip = new Ship(sSize);
+                            tempShip.SetPosition(sX, sY, sHor);
+
+                            // Используем тот же метод для закраски Miss вокруг убитого
+                            MarkSurroundingAsMiss(game.EnemyBoard, tempShip);
                         }
 
+                        // ИСПРАВЛЕНИЕ 3: Логика смены хода
                         if (resultType == CellState.Miss)
                         {
                             game.CurrentState = GameState.EnemyTurn;
@@ -447,26 +536,33 @@ namespace SeaBattleGame
                         else
                         {
                             game.CurrentState = GameState.PlayerTurn;
-                            lblStatus.Text = "Попадание! Продолжайте стрелять!";
+                            lblStatus.Text = "Попадание! Стреляйте еще!";
                         }
                         UpdateUI();
                         break;
 
+                    case "GAME_OVER_YOU_WIN": // ИСПРАВЛЕНИЕ 5: Явное сообщение о победе
+                        game.CurrentState = GameState.GameOver;
+                        game.Winner = "Player";
+                        lblStatus.Text = "ПОБЕДА! Все корабли противника уничтожены!";
+                        UpdateUI();
+                        ShowRestartDialog();
+                        break;
+
                     case "RESTART":
-                        if (MessageBox.Show("Противник предлагает реванш. Согласны?", "Реванш",
-                            MessageBoxButtons.YesNo) == DialogResult.Yes)
+                        if (MessageBox.Show("Противник предлагает реванш. Согласны?", "Реванш", MessageBoxButtons.YesNo) == DialogResult.Yes)
                         {
+                            ResetGameVariables(); // Сброс переменных
                             game.RestartGame();
-                            currentShipIndex = 0;
-                            _ = networkManager.SendMessage("RESTART_ACK");
+                            await networkManager.SendMessage("RESTART_ACK");
                             UpdateUI();
                             UpdateShipInfo();
                         }
                         break;
 
                     case "RESTART_ACK":
+                        ResetGameVariables(); // Сброс переменных
                         game.RestartGame();
-                        currentShipIndex = 0;
                         UpdateUI();
                         UpdateShipInfo();
                         break;
