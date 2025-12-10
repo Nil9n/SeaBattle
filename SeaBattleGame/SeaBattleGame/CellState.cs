@@ -1,16 +1,21 @@
-﻿public enum CellState
+﻿namespace SeaBattleGame
 {
-    Empty,
-    Ship,
-    Hit,
-    Miss,
-    Sunk
-}
+    // Состояние одной клетки на поле
+    public enum CellState
+    {
+        Empty,  // Пустая вода
+        Ship,   // Там стоит целый корабль (виден только игроку)
+        Hit,    // Попадание в корабль (ранен)
+        Miss,   // Выстрел в воду (мимо)
+        Sunk    // Корабль полностью уничтожен (утоплен)
+    }
 
-public enum GameState
-{
-    Setup,
-    PlayerTurn,
-    EnemyTurn,
-    GameOver
+    // Состояние самой игры (машина состояний)
+    public enum GameState
+    {
+        Setup,      // Этап расстановки кораблей
+        PlayerTurn, // Ход игрока (мы стреляем)
+        EnemyTurn,  // Ход противника (ждем выстрела)
+        GameOver    // Игра окончена
+    }
 }

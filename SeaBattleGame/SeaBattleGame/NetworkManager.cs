@@ -6,23 +6,29 @@ using System.Threading.Tasks;
 
 public class NetworkManager
 {
-    private TcpClient client;
-    private TcpListener listener;
-    private NetworkStream stream;
+    private TcpClient client;      // Клиент для подключения
+    private TcpListener listener;  // Сервер для ожидания подключения
+    private NetworkStream stream;  // Поток данных (канал связи)
+
+    // События, на которые подписывается форма (чтобы узнать, что пришло сообщение)
     public event Action<string> OnMessageReceived;
     public event Action OnConnected;
+
     public bool IsConnected => client?.Connected == true;
 
+    // Запуск в режиме Сервера (Хоста)
     public async Task StartServer(int port)
     {
         listener = new TcpListener(IPAddress.Any, port);
-        listener.Start();
+        listener.Start(); // Начинаем слушать порт
+        // Ждем подключения (асинхронно, не блокируя UI)
         client = await listener.AcceptTcpClientAsync();
-        stream = client.GetStream();
-        OnConnected?.Invoke();
-        _ = Task.Run(StartListening);
+        stream = client.GetStream(); // Получаем канал для общения
+        OnConnected?.Invoke();       // Сообщаем форме, что соединение есть
+        _ = Task.Run(StartListening); // Запускаем бесконечный цикл прослушивания сообщений
     }
 
+    // Запуск в режиме Клиента (Подключение к другу)
     public async Task ConnectToServer(string ip, int port)
     {
         client = new TcpClient();
@@ -32,17 +38,21 @@ public class NetworkManager
         _ = Task.Run(StartListening);
     }
 
+    // Бесконечный цикл чтения входящих сообщений
     private async Task StartListening()
     {
-        byte[] buffer = new byte[1024];
+        byte[] buffer = new byte[1024]; // Буфер для данных
         try
         {
             while (client?.Connected == true)
             {
+                // Читаем данные из потока
                 int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-                if (bytesRead == 0) break;
+                if (bytesRead == 0) break; // Если 0 байт - соединение закрыто
 
+                // Преобразуем байты в строку (UTF8)
                 string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                // Вызываем событие (сообщаем форме "Пришло письмо!")
                 OnMessageReceived?.Invoke(message);
             }
         }
@@ -52,6 +62,7 @@ public class NetworkManager
         }
     }
 
+    // Отправка сообщения
     public async Task SendMessage(string message)
     {
         if (stream?.CanWrite == true)
@@ -61,6 +72,7 @@ public class NetworkManager
         }
     }
 
+    // Закрытие соединения (освобождение ресурсов)
     public void Disconnect()
     {
         stream?.Close();

@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace SeaBattleGame
@@ -13,6 +10,7 @@ namespace SeaBattleGame
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            // Запуск главной формы
             Application.Run(new MainForm());
         }
     }

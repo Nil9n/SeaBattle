@@ -1,75 +1,51 @@
-﻿public class Game
+﻿namespace SeaBattleGame
 {
-    public GameBoard PlayerBoard { get; set; }
-    public GameBoard EnemyBoard { get; private set; }
-    public GameState CurrentState { get; set; }
-    public string Winner { get; set; }
-
-    public Game()
+    // Главный контроллер игры
+    public class Game
     {
-        PlayerBoard = new GameBoard();
-        EnemyBoard = new GameBoard();
-        CurrentState = GameState.Setup;
-        Winner = null;
-    }
+        public GameBoard PlayerBoard { get; set; } // Наше поле
+        public GameBoard EnemyBoard { get; private set; } // Поле врага (как мы его видим)
+        public GameState CurrentState { get; set; }
+        public string Winner { get; set; }
 
-    public void StartGame(bool isHost)
-    {
-        if (isHost)
+        public Game()
         {
-            CurrentState = GameState.PlayerTurn;
-        }
-        else
-        {
-            CurrentState = GameState.EnemyTurn;
-        }
-        Winner = null;
-    }
-
-    public CellState ProcessPlayerMove(int x, int y)
-    {
-        if (CurrentState != GameState.PlayerTurn)
-            return CellState.Miss;
-
-        var result = EnemyBoard.MakeMove(x, y);
-
-        if (result == CellState.Miss)
-        {
-            CurrentState = GameState.EnemyTurn;
+            PlayerBoard = new GameBoard();
+            EnemyBoard = new GameBoard();
+            CurrentState = GameState.Setup;
+            Winner = null;
         }
 
-        if (EnemyBoard.AllShipsSunk())
+        // Старт игры: Хост ходит первым
+        public void StartGame(bool isHost)
         {
-            CurrentState = GameState.GameOver;
-            Winner = "Player";
+            CurrentState = isHost ? GameState.PlayerTurn : GameState.EnemyTurn;
+            Winner = null;
         }
 
-        return result;
-    }
-
-    public CellState ProcessEnemyMove(int x, int y)
-    {
-        var result = PlayerBoard.MakeMove(x, y);
-
-        if (result == CellState.Miss)
+        // Обработка выстрела ВРАГА по НАМ
+        public CellState ProcessEnemyMove(int x, int y)
         {
-            CurrentState = GameState.PlayerTurn;
+            // Делаем ход на нашей доске
+            var result = PlayerBoard.MakeMove(x, y);
+            return result;
         }
 
-        if (PlayerBoard.AllShipsSunk())
+        // Обработка выстрела НАС по ВРАГУ (в этом классе мы просто меняем ход)
+        // Реальная логика попадания приходит по сети в методе OnNetworkMessageReceived
+        public CellState ProcessPlayerMove(int x, int y)
         {
-            CurrentState = GameState.GameOver;
-            Winner = "Enemy";
+            // Здесь логика проще, т.к. мы ждем ответа от сервера
+            if (CurrentState != GameState.PlayerTurn) return CellState.Miss;
+            return CellState.Empty; 
         }
 
-        return result;
-    }
-
-    public void RestartGame()
-    {
-        PlayerBoard = new GameBoard();
-        EnemyBoard = new GameBoard();
-        CurrentState = GameState.Setup;
-        Winner = null;
+        public void RestartGame()
+        {
+            PlayerBoard = new GameBoard();
+            EnemyBoard = new GameBoard();
+            CurrentState = GameState.Setup;
+            Winner = null;
+        }
     }
 }
